@@ -102,3 +102,4 @@ ENV/
 
 # cached files for data processing
 data_players/*
+boxscores/*

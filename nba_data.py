@@ -2,50 +2,130 @@ from bs4 import BeautifulSoup
 from collections import defaultdict
 from datetime import datetime
 import matplotlib.pyplot as plt
-import requests
 import numpy as np
+import requests
 import mappings
 import json
 import os
+import calendar
 
-# class Player():
-# 	def __init__(self, name, data):
-# 		self.name = name
-# 		self.data = data
+
+# def run(date_start, date_end, days_samplesize=1, is_simulation=False):
+#     run_player_data(date_start, date_end, days_samplesize, is_simulation=False)
+
+    # return run_predictions(date_start, date_end, days_samplesize)
+
 
 # data operations on collected data
-def run_player_data(date_predict_raw, days_samplesize=1, is_simulation=False):
-    predictions = []
-    date_predict = np.datetime64(date_predict_raw)
-    date_calc_end = date_predict - np.timedelta64(1, 'D')
+# def run_player_data(date_start, date_end, days_samplesize, is_simulation=False):
+def download_boxscores(date_start, date_end, is_simulation=False):
+    # get one month past date_end (because dates_season_months falls one short)
+    date_end_plus1month = np.datetime64('-'.join(date_end.split('-')[:2])) + np.timedelta64(1, 'M')
 
-    # get links needed for calculation
-    links_games_calc = get_links_games(date_calc_end, days_samplesize)
-    links_games_predict = get_links_games(date_predict, 1)
+    # generate array of months based on regular season schedule for the input year_season
+    dates_season_months = np.arange(date_start, date_end_plus1month, dtype='datetime64[M]')
 
-    # get boxscore info0
-    boxscores_calc, outcomes_calc = get_boxscores(links_games_calc, is_simulation=is_simulation)
-    boxscores_predict, outcomes_predict = get_boxscores(links_games_predict, is_simulation=is_simulation)
+    for month in dates_season_months:
+        date_end_reached = False
+        month_num =  int(str(month).split('-')[1])
+        month_name = calendar.month_name[month_num].lower()
 
-    # first get player statistics on n number of days
-    data_players = get_player_data(boxscores_calc)
+        dict_links_games_month = get_links_games_month('2017', month_name)
 
-    # output data_players to json. file path is /data_players/[days_samplesize]/[season]/[month]/data_Y_m_d.json
-    # season = get_season(???)
-    date_split = date_predict_raw.split('-')
-    file_path = 'data_players/%s/%s/%s/' % (days_samplesize, '2017', date_split[1])
-    file_name = 'data_%s_%s_%s.json' % (date_split[0], date_split[1], date_split[2])
+        for day, links in dict_links_games_month.items():
+            # exit if after last requested day
+            if np.datetime64(day) > np.datetime64(date_end):
+                date_end_reached = True
+                break
 
-    # make folders if they don't exist
-    if not os.path.exists(file_path):
-        os.makedirs(file_path);
+            print(day)
 
-    with open(file_path + file_name, 'w') as file_out:
-        json.dump(data_players, file_out)
+            # output data_players to json. file path is /data_players/[days_samplesize]/[season]/[month]/data_Y_m_d.json
+            date_split = str(day).split('-')
+            # file_path_dataplayer = 'data_players/%s/%s/%s' % (days_samplesize, date_split[0], date_split[1])
+            file_path_boxscore = 'boxscores/%s/%s/%s/' % (date_split[0], date_split[1], date_split[2])
+
+            # make folders for data players if they don't exist. if they do, skip everything else because we already computed
+            if os.path.exists(file_path_boxscore):
+                continue
+
+            # make folders (if they don't exist) and output data
+            # if not os.path.exists(file_path_dataplayer):
+            #     os.makedirs(file_path_dataplayer);
+
+            for link in links:
+                file_name = '%s.json' % link.split('/')[2]
+
+                # get boxscore info
+                boxscores_calc, outcomes_calc = get_boxscore(link, is_simulation=is_simulation)
+                # boxscores_predict, outcomes_predict = get_boxscores(links_games_predict, is_simulation=is_simulation)
+
+                # first get player statistics on n number of days
+                # data_players = get_player_data(boxscores_calc)
+
+                # write results to cache
+                if not os.path.exists(file_path_boxscore):
+                    os.makedirs(file_path_boxscore)
+
+                # with open(file_path_dataplayer + "/data_" + file_name, 'w') as file_out:
+                #     json.dump(data_players, file_out)
+
+                # save boxscore as well
+                boxes_html = [box.prettify() for box in boxscores_calc]
+
+                with open(file_path_boxscore + file_name, 'w') as file_out:
+                    if is_simulation:
+                        json.dump({ 'boxscores' : boxes_html, 'outcome' : outcomes_calc }, file_out)
+                    else:
+                        json.dump({ 'boxscores' : boxes_html }, file_out)
+
+        if date_end_reached:
+            break
 
 
-def run_predictions(days_samplesize):
-	pass
+def generate_player_data(date_start, date_end, days_samplesize):
+    # generate array of days based on regular season schedule for the input year_season
+    dates_season_days = np.arange(date_start, date_end, dtype='datetime64[D]')
+
+    # for each date, we want to get the last days_samplesize of data
+    for date in dates_season_days:
+        print (date)
+
+        # output data_players to json. file path is /data_players/[days_samplesize]/[season]/[month]/data_Y_m_d.json
+        date_split = str(date).split('-')
+        file_path_dataplayer = 'data_players/%s/%s/%s' % (days_samplesize, date_split[0], date_split[1])
+
+        # make folders (if they don't exist) and output data
+        if not os.path.exists(file_path_dataplayer):
+            os.makedirs(file_path_dataplayer)
+
+        # get cached json files from last days_samplesize days
+        date_datetime = np.datetime64(date)
+        dates_samplesize = np.arange(date_datetime - np.timedelta64(5, 'D'), date_datetime, dtype='datetime64[D]')
+
+        print(dates_samplesize)
+
+
+
+
+
+def run_predictions(date_start, date_end, days_samplesize):
+    print("starting predictions...")
+
+	# generate array of dates based on regular season schedule for the input year_season
+    dates_season = np.arange(date_start, date_end, dtype='datetime64[D]')
+
+    for date in dates_season:
+        print(date)
+
+        # output data_players to json. file path is /data_players/[days_samplesize]/[season]/[month]/data_Y_m_d.json
+        date_split = str(date).split('-')
+        file_path = 'data_players/%s/%s/%s/' % (days_samplesize, '2017', date_split[1])
+        file_name = 'data_%s_%s_%s.json' % (date_split[0], date_split[1], date_split[2])
+
+        with open(file_path + file_name, 'r') as file_in:
+            data = json.load(file_in)
+            print (data)
 
 	# # predict each boxscore and then update player data
 	# for box in boxscores_predict:
@@ -58,7 +138,7 @@ def run_predictions(days_samplesize):
 
 def get_player_data(boxscores): 
     #     initialize dictionary of player data
-    data_players = defaultdict(Player)
+    data_players = {}
     
     for box in boxscores:
         update_player_data(box, data_players)
@@ -66,31 +146,40 @@ def get_player_data(boxscores):
     return data_players
 
 
-    # queries for basketball-reference
 
+
+"""
+
+QUERIES FOR BASKETBALL REFERENCE
+
+"""
+
+# returns a dict with the following format: { date : [ array of links ] }
+def get_links_games_month(year_season, month):
+    dict_links_games = defaultdict(list)
+    link_query = "https://www.basketball-reference.com/leagues/NBA_%s_games-%s.html" % (year_season, month)
+
+    page = requests.get(link_query)
+    soup = BeautifulSoup(page.content, "html.parser")
+    headers_game = soup.find_all(attrs={"data-stat":"box_score_text"})
+    links_games = [header.find_all('a')[0].get('href') for header in headers_game if len(header.find_all('a')) > 0]
     
-def get_boxscores(links_games, is_simulation=False):
-    boxscores = []
-    outcomes = []
-     
-    for game in links_games:
-        if is_simulation:
-            boxscore, outcome = get_boxscore(game, is_simulation=True)
-            boxscores.append(get_boxscore(game))
-            outcomes.append(outcome)
-        else:
-            boxscores.append(get_boxscore(game))
-            
-    if is_simulation:
-        return (boxscores, outcomes)
-    else:
-        return boxscores
+    # only add links that are within the sample
+    for link in links_games:
+        date_boxscore_raw = link[11:19]
+        date_boxscore = datetime.strftime((datetime.strptime(date_boxscore_raw, '%Y%m%d')), "%Y-%m-%d")
+
+        # add game to dict
+        dict_links_games[date_boxscore].append(link)
+
+    return dict_links_games
 
 
-def get_links_games(date_end_str, days_samplesize, test_mode=False):
+
+def get_links_games(year_season, date_end_str, days_samplesize, test_mode=False):
     games_all = []
     outcomes = []
-    year_season = '2017'
+    # year_season = '2017'
     date_end = np.datetime64(date_end_str) + np.timedelta64(1, 'D') # to include the end date
     date_start = date_end - np.timedelta64(days_samplesize, 'D')
     
@@ -140,6 +229,23 @@ def get_list_games_month(link_month):
     return  links_games
         
     
+def get_boxscores(links_games, is_simulation=False):
+    boxscores = []
+    outcomes = []
+     
+    for game in links_games:
+        if is_simulation:
+            boxscore, outcome = get_boxscore(game, is_simulation=True)
+            boxscores.append(get_boxscore(game))
+            outcomes.append(outcome)
+        else:
+            boxscores.append(get_boxscore(game))
+            
+    if is_simulation:
+        return (boxscores, outcomes)
+    else:
+        return boxscores
+    
 def get_boxscore(link_game, is_simulation=False):
     page = requests.get("https://www.basketball-reference.com%s" % link_game)
     soup = BeautifulSoup(page.content, "html.parser")
@@ -156,59 +262,59 @@ def get_boxscore(link_game, is_simulation=False):
     if is_simulation:
         scorebox = soup.find('div', {'class' : 'scorebox'})
         scores = scorebox.find_all('div', {'class' : 'score'})
-        spread = int(scores[0].getText()) - int(scores[1].getText())
+        score_away, score_home = int(scores[0].getText()), int(scores[1].getText())
         date = link_game.split('/')[2][:8]
-        return ([box_away, box_home], (team_away, team_home, date, spread))
+        return ([box_away, box_home], (team_away, team_home, date, (score_away, score_home)))
     else:
         return [box_away, box_home]
         
 
 # extracts player data from a home and away boxscore for one game
 def update_player_data(boxscores, dataset):
-	for box in boxscores:
-		rows_players = [row for row in box.find_all("tr") if row != None]
+    for box in boxscores:
+        rows_players = [row for row in box.find_all("tr") if row != None]
 
-		# we take the last entry off the array b/c it's team totals
-		for player in rows_players[:len(rows_players) - 1]:
-			player_header = player.find('th', {'data-stat':'player'})
+        # we take the last entry off the array b/c it's team totals
+        for player in rows_players[:len(rows_players) - 1]:
+            player_header = player.find('th', {'data-stat':'player'})
 
-			# ensures we have valid player data by checking for the existence of one stat
-			is_valid_player = True if player.find('td', { 'data-stat' : 'mp' }) != None else False
+            # ensures we have valid player data by checking for the existence of one stat
+            is_valid_player = True if player.find('td', { 'data-stat' : 'mp' }) != None else False
 
-			if is_valid_player:                
-				player_id = player_header.get('data-append-csv')
-				player_name = player_header.get('csk')
-				player_secondsplayed = int(convert_time_to_seconds(player.find('td', { 'data-stat' : 'mp' }).getText()))
+            if is_valid_player:                
+                player_id = player_header.get('data-append-csv')
+                player_name = player_header.get('csk')
+                player_secondsplayed = int(convert_time_to_seconds(player.find('td', { 'data-stat' : 'mp' }).getText()))
 
-				if player_secondsplayed > 0:
-					player_gp = 1   # counter for games played
-					player_fg = int(player.find('td', { 'data-stat' : 'fg' }).getText())
-					player_fga = int(player.find('td', { 'data-stat' : 'fga' }).getText())
-					# player_fg_pct = player.find('td', { 'data-stat' : 'fg_pct' }).getText()
-					player_fg3 = int(player.find('td', { 'data-stat' : 'fg3' }).getText())
-					player_fg3a = int(player.find('td', { 'data-stat' : 'fg3a' }).getText())
-					# player_fg3_pct = player.find('td', { 'data-stat' : 'fg3_pct' }).getText()
-					player_ft = int(player.find('td', { 'data-stat' : 'ft' }).getText())
-					player_fta = int(player.find('td', { 'data-stat' : 'fta' }).getText())
-					# player_ft_pct = player.find('td', { 'data-stat' : 'ft_pct' }).getText()
-					player_orb = int(player.find('td', { 'data-stat' : 'orb' }).getText())
-					player_drb = int(player.find('td', { 'data-stat' : 'drb' }).getText())
-					# player_trb = player.find('td', { 'data-stat' : 'trb' }).getText()
-					player_ast = int(player.find('td', { 'data-stat' : 'ast' }).getText())
-					player_stl = int(player.find('td', { 'data-stat' : 'stl' }).getText())
-					player_blk = int(player.find('td', { 'data-stat' : 'blk' }).getText())
-					player_tov = int(player.find('td', { 'data-stat' : 'tov' }).getText())
-					player_pf = int(player.find('td', { 'data-stat' : 'pf' }).getText())
-					player_pts = int(player.find('td', { 'data-stat' : 'pts' }).getText())
+                if player_secondsplayed > 0:
+                    player_gp = 1   # counter for games played
+                    player_fg = int(player.find('td', { 'data-stat' : 'fg' }).getText())
+                    player_fga = int(player.find('td', { 'data-stat' : 'fga' }).getText())
+                    # player_fg_pct = player.find('td', { 'data-stat' : 'fg_pct' }).getText()
+                    player_fg3 = int(player.find('td', { 'data-stat' : 'fg3' }).getText())
+                    player_fg3a = int(player.find('td', { 'data-stat' : 'fg3a' }).getText())
+                    # player_fg3_pct = player.find('td', { 'data-stat' : 'fg3_pct' }).getText()
+                    player_ft = int(player.find('td', { 'data-stat' : 'ft' }).getText())
+                    player_fta = int(player.find('td', { 'data-stat' : 'fta' }).getText())
+                    # player_ft_pct = player.find('td', { 'data-stat' : 'ft_pct' }).getText()
+                    player_orb = int(player.find('td', { 'data-stat' : 'orb' }).getText())
+                    player_drb = int(player.find('td', { 'data-stat' : 'drb' }).getText())
+                    # player_trb = player.find('td', { 'data-stat' : 'trb' }).getText()
+                    player_ast = int(player.find('td', { 'data-stat' : 'ast' }).getText())
+                    player_stl = int(player.find('td', { 'data-stat' : 'stl' }).getText())
+                    player_blk = int(player.find('td', { 'data-stat' : 'blk' }).getText())
+                    player_tov = int(player.find('td', { 'data-stat' : 'tov' }).getText())
+                    player_pf = int(player.find('td', { 'data-stat' : 'pf' }).getText())
+                    player_pts = int(player.find('td', { 'data-stat' : 'pts' }).getText())
 
-					# player_data_arr = np.array([player_secondsplayed, player_gp, player_fg, player_fga, player_fg3, player_fg3a, player_ft, player_fta, player_orb, player_drb, player_ast, player_stl, player_blk, player_tov, player_pf, player_pts])
+                    # player_data_arr = np.array([player_secondsplayed, player_gp, player_fg, player_fga, player_fg3, player_fg3a, player_ft, player_fta, player_orb, player_drb, player_ast, player_stl, player_blk, player_tov, player_pf, player_pts])
                     player_data_arr = [player_secondsplayed, player_gp, player_fg, player_fga, player_fg3, player_fg3a, player_ft, player_fta, player_orb, player_drb, player_ast, player_stl, player_blk, player_tov, player_pf, player_pts]
 
-					if player_id in dataset:
-						# dataset[player_id]['data'] = np.vstack((dataset[player_id]['data'], player_data_arr))
+                    if player_id in dataset:
+                        # dataset[player_id]['data'] = np.vstack((dataset[player_id]['data'], player_data_arr))
                         dataset[player_id]['data'].append(player_data_arr)
-					else:
-						dataset[player_id] = { 'name' : player_name, 'data' : [player_data_arr] }
+                    else:
+                        dataset[player_id] = { 'name' : player_name, 'data' : [player_data_arr] }
 
 
 # function that calcuates spread for a game
