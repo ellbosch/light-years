@@ -10,14 +10,13 @@ import os
 import calendar
 
 
-# def run(date_start, date_end, days_samplesize=1, is_simulation=False):
-#     run_player_data(date_start, date_end, days_samplesize, is_simulation=False)
+def run(date_start, date_end, days_samplesize=1):
+    data_players = generate_player_data(date_start, date_end, days_samplesize)
 
-    # return run_predictions(date_start, date_end, days_samplesize)
+    return run_predictions_simulation(date_start, date_end, days_samplesize)
 
 
 # data operations on collected data
-# def run_player_data(date_start, date_end, days_samplesize, is_simulation=False):
 def download_boxscores(date_start, date_end, is_simulation=False):
     # get one month past date_end (because dates_season_months falls one short)
     date_end_plus1month = np.datetime64('-'.join(date_end.split('-')[:2])) + np.timedelta64(1, 'M')
@@ -49,10 +48,6 @@ def download_boxscores(date_start, date_end, is_simulation=False):
             if os.path.exists(file_path_boxscore):
                 continue
 
-            # make folders (if they don't exist) and output data
-            # if not os.path.exists(file_path_dataplayer):
-            #     os.makedirs(file_path_dataplayer);
-
             for link in links:
                 file_name = '%s.json' % link.split('/')[2]
 
@@ -60,15 +55,9 @@ def download_boxscores(date_start, date_end, is_simulation=False):
                 boxscores_calc, outcomes_calc = get_boxscore(link, is_simulation=is_simulation)
                 # boxscores_predict, outcomes_predict = get_boxscores(links_games_predict, is_simulation=is_simulation)
 
-                # first get player statistics on n number of days
-                # data_players = get_player_data(boxscores_calc)
-
                 # write results to cache
                 if not os.path.exists(file_path_boxscore):
                     os.makedirs(file_path_boxscore)
-
-                # with open(file_path_dataplayer + "/data_" + file_name, 'w') as file_out:
-                #     json.dump(data_players, file_out)
 
                 # save boxscore as well
                 boxes_html = [box.prettify() for box in boxscores_calc]
@@ -85,7 +74,8 @@ def download_boxscores(date_start, date_end, is_simulation=False):
 
 def generate_player_data(date_start, date_end, days_samplesize):
     # generate array of days based on regular season schedule for the input year_season
-    dates_season_days = np.arange(date_start, date_end, dtype='datetime64[D]')
+    date_end_plusone = np.datetime64(date_end) + np.timedelta64(1, 'D')
+    dates_season_days = np.arange(date_start, date_end_plusone, dtype='datetime64[D]')
 
     # for each date, we want to get the last days_samplesize of data
     for date in dates_season_days:
@@ -94,6 +84,7 @@ def generate_player_data(date_start, date_end, days_samplesize):
         # output data_players to json. file path is /data_players/[days_samplesize]/[season]/[month]/data_Y_m_d.json
         date_split = str(date).split('-')
         file_path_dataplayer = 'data_players/%s/%s/%s' % (days_samplesize, date_split[0], date_split[1])
+        file_name = '/data_%s_%s_%s.json' % (date_split[0], date_split[1], date_split[2])
 
         # make folders (if they don't exist) and output data
         if not os.path.exists(file_path_dataplayer):
@@ -101,39 +92,88 @@ def generate_player_data(date_start, date_end, days_samplesize):
 
         # get cached json files from last days_samplesize days
         date_datetime = np.datetime64(date)
-        dates_samplesize = np.arange(date_datetime - np.timedelta64(5, 'D'), date_datetime, dtype='datetime64[D]')
-
-        print(dates_samplesize)
 
 
 
 
 
-def run_predictions(date_start, date_end, days_samplesize):
-    print("starting predictions...")
+        """ this needs to be changed so that it gets the last 5 days of data, and if no 5 days, keep fetching the last date...
+        recursive formula: while length < 5, fetch prior date of data...
 
-	# generate array of dates based on regular season schedule for the input year_season
-    dates_season = np.arange(date_start, date_end, dtype='datetime64[D]')
+        """
+        dates_samplesize = np.arange(date_datetime - np.timedelta64(days_samplesize, 'D'), date_datetime, dtype='datetime64[D]')
 
-    for date in dates_season:
-        print(date)
 
-        # output data_players to json. file path is /data_players/[days_samplesize]/[season]/[month]/data_Y_m_d.json
-        date_split = str(date).split('-')
-        file_path = 'data_players/%s/%s/%s/' % (days_samplesize, '2017', date_split[1])
-        file_name = 'data_%s_%s_%s.json' % (date_split[0], date_split[1], date_split[2])
 
-        with open(file_path + file_name, 'r') as file_in:
-            data = json.load(file_in)
-            print (data)
 
-	# # predict each boxscore and then update player data
-	# for box in boxscores_predict:
-	# 	# predict spread for all boxscores
-	# 	predictions.append(predict_spreads_games(box, data_players))
 
-	# 	# update player data
-	# 	update_player_data(box, data_players)
+
+        # get all boxscore files
+        boxscores_files = []
+
+        for date_sample in dates_samplesize:
+            date_sample_split = str(date_sample).split("-")
+            file_path_boxscore = "boxscores/%s/%s/%s/" % (date_sample_split[0], date_sample_split[1], date_sample_split[2])
+
+            if os.path.exists(file_path_boxscore):
+                files = os.listdir(file_path_boxscore)
+                boxscores_files.extend([file_path_boxscore + file_name for file_name in files])
+
+        # convert json files to beautifulsoup classes
+        boxscores_sample = []
+        outcomes_sample = []
+
+        for file in boxscores_files:
+            with open(file, 'r') as file_out:
+                json_file = json.load(file_out)
+                box = [BeautifulSoup(b, "html.parser") for b in json_file["boxscores"]]
+                outcome = json_file["outcome"]
+                boxscores_sample.append(box)
+                outcomes_sample.append(outcome)
+
+        # get statlines for each player in this sample size and save to json file
+        data_players = get_player_data(boxscores_sample)
+        if data_players != {}:
+            with open(file_path_dataplayer + file_name, 'w') as file_out:
+                json.dump(data_players, file_out)
+
+
+
+def run_predictions_simulation(date_start, date_end, days_samplesize):
+    predictions = []
+
+	# generate array of files we will read
+    date_end_plusone = np.datetime64(date_end) + np.timedelta64(1, 'D')
+    dates_all = np.arange(date_start, date_end_plusone, dtype='datetime64[D]')
+
+    for date in dates_all:
+        predictions.extend(run_predictions_day(str(date), days_samplesize, is_simulation=True))
+
+    return predictions
+
+
+def run_predictions_day(date, days_samplesize, is_simulation=False):
+    predictions = []
+    data_players = {}
+    date_split = date.split('-')
+    file_path_dataplayers = 'data_players/%s/%s/%s/' % (days_samplesize, date_split[0], date_split[1])
+    file_path_boxscores = 'boxscores/%s/%s/%s/' % (date_split[0], date_split[1], date_split[2])
+    file_name_dataplayers = 'data_%s_%s_%s.json' % (date_split[0], date_split[1], date_split[2])
+
+    # get player data from sample size of our choosing as well as boxscore for game we want to analyze
+    try:
+        with open(file_path_dataplayers + file_name_dataplayers, 'r') as file_in:
+            data_players = json.load(file_in)
+    except Exception as e:
+        pass
+
+    if os.path.exists(file_path_boxscores):
+        files = os.listdir(file_path_boxscores)
+    
+        for file_name in files:
+            predictions.append(predict_spreads_games(file_path_boxscores + file_name, data_players, is_simulation))
+
+    return predictions
 
 
 def get_player_data(boxscores): 
@@ -173,7 +213,6 @@ def get_links_games_month(year_season, month):
         dict_links_games[date_boxscore].append(link)
 
     return dict_links_games
-
 
 
 def get_links_games(year_season, date_end_str, days_samplesize, test_mode=False):
@@ -245,7 +284,8 @@ def get_boxscores(links_games, is_simulation=False):
         return (boxscores, outcomes)
     else:
         return boxscores
-    
+
+
 def get_boxscore(link_game, is_simulation=False):
     page = requests.get("https://www.basketball-reference.com%s" % link_game)
     soup = BeautifulSoup(page.content, "html.parser")
@@ -318,12 +358,18 @@ def update_player_data(boxscores, dataset):
 
 
 # function that calcuates spread for a game
-def predict_spreads_games(box, data_players):
+def predict_spreads_games(file_box, data_players, is_simulation=False):
     predictions = []
-    
+    box = []
+
+    # get boxscore from cache
+    with open(file_box, 'r') as file_in:
+        json_file = json.load(file_in)
+        boxes = [ BeautifulSoup(box, 'html.parser') for box in json_file['boxscores'] ]
+
     # get rosters
-    roster_away = get_roster(box[0])
-    roster_home = get_roster(box[1])
+    roster_away = get_roster(boxes[0])
+    roster_home = get_roster(boxes[1])
     
     # calculate home and away team's expected value
     value_away = calculate_value_team(roster_away, data_players)
@@ -334,27 +380,29 @@ def predict_spreads_games(box, data_players):
 
 # calculates value for a specific roster
 def calculate_value_team(roster, data_players):
-	score = 0.0
+    score = 0.0
 
-	# sums the statlines for each player given a sample size of days
-	for k,v in data_players.items():
-		if k in roster:
-			# grab the last n statlines
-			fg_adjusted = 0.0
+    # sums the statlines for each player given a sample size of days
+    for k,v in data_players.items():
+        if k in roster:
+            # grab the last n statlines
+            fg_adjusted = 0.0
 
-			if v.data.shape != (16,):
-				data_sum = np.sum(np.copy(v.data), axis=0)
-				fg_adjusted = data_sum[2] / data_sum[1]
-			else:
-				fg_adjusted = v.data[2] / v.data[1]
+            statline_player = np.array(v['data'])
 
-			score += fg_adjusted
+            if statline_player.shape != (16,):
+                data_sum = np.sum(np.copy(statline_player), axis=0)
+                fg_adjusted = data_sum[2] / data_sum[1]
+            else:
+                fg_adjusted = statline_player[2] / statline_player[1]
 
-	if score == 0.0:
-		for k,v in data_players.items():
-			if k in roster:
-				print("zero score!")
-	return score
+            score += fg_adjusted
+
+    if score == 0.0:
+        for k,v in data_players.items():
+            if k in roster:
+                print("zero score!")
+    return score
 
 
 # returns tuple of (roster_away, roster_home) from boxscore
