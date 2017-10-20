@@ -41,7 +41,6 @@ def download_boxscores(date_start, date_end, is_simulation=False):
 
             # output data_players to json. file path is /data_players/[days_samplesize]/[season]/[month]/data_Y_m_d.json
             date_split = str(day).split('-')
-            # file_path_dataplayer = 'data_players/%s/%s/%s' % (days_samplesize, date_split[0], date_split[1])
             file_path_boxscore = 'boxscores/%s/%s/%s/' % (date_split[0], date_split[1], date_split[2])
 
             # make folders for data players if they don't exist. if they do, skip everything else because we already computed
@@ -93,31 +92,12 @@ def generate_player_data(date_start, date_end, days_samplesize):
         # get cached json files from last days_samplesize days
         date_datetime = np.datetime64(date)
 
+        # dates_samplesize = np.arange(date_datetime - np.timedelta64(days_samplesize, 'D'), date_datetime, dtype='datetime64[D]')
+        boxscores_files = get_boxscores_from_sample(date, days_samplesize)
 
-
-
-
-        """ this needs to be changed so that it gets the last 5 days of data, and if no 5 days, keep fetching the last date...
-        recursive formula: while length < 5, fetch prior date of data...
-
-        """
-        dates_samplesize = np.arange(date_datetime - np.timedelta64(days_samplesize, 'D'), date_datetime, dtype='datetime64[D]')
-
-
-
-
-
-
-        # get all boxscore files
-        boxscores_files = []
-
-        for date_sample in dates_samplesize:
-            date_sample_split = str(date_sample).split("-")
-            file_path_boxscore = "boxscores/%s/%s/%s/" % (date_sample_split[0], date_sample_split[1], date_sample_split[2])
-
-            if os.path.exists(file_path_boxscore):
-                files = os.listdir(file_path_boxscore)
-                boxscores_files.extend([file_path_boxscore + file_name for file_name in files])
+        # don't output anything if there are no games in this sample size for this date
+        if len(boxscores_files) == 0:
+            continue
 
         # convert json files to beautifulsoup classes
         boxscores_sample = []
@@ -193,6 +173,33 @@ def get_player_data(boxscores):
 QUERIES FOR BASKETBALL REFERENCE
 
 """
+
+# returns the last n games from a requested sample
+def get_boxscores_from_sample(date, days_samplesize):
+    boxscores_files = []
+    pointer = 0
+    date_pointer = np.datetime64(date)
+    date_breakpoint = date_pointer - np.timedelta64(60, 'D')
+
+    while pointer < days_samplesize:
+        # return empty set if no games in last two months
+        if date_pointer == date_breakpoint:
+            return []
+
+        date_pointer = date_pointer - np.timedelta64(1, 'D')
+        date_pointer_split = str(date_pointer).split("-")
+        file_path_boxscore = "boxscores/%s/%s/%s/" % (date_pointer_split[0], date_pointer_split[1], date_pointer_split[2])
+
+        # if date is a match, increase pointer 
+        if os.path.exists(file_path_boxscore):
+            files = os.listdir(file_path_boxscore)
+            boxscores_files.extend([file_path_boxscore + file_name for file_name in files])
+            pointer += 1
+        else:
+            print("no games for %s" % date_pointer)
+
+    return boxscores_files
+
 
 # returns a dict with the following format: { date : [ array of links ] }
 def get_links_games_month(year_season, month):
