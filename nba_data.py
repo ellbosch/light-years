@@ -10,11 +10,10 @@ import os
 import calendar
 
 
-def run(date_start, date_end, days_samplesize=1):
-    data_players = generate_player_data(date_start, date_end, days_samplesize)
-
-    return run_predictions_simulation(date_start, date_end, days_samplesize)
-
+# generate data from new sample
+def run(date_start, date_end, days_samplesize):
+    download_boxscores(date_start, date_end, is_simulation=True)
+    generate_player_data(date_start, date_end, days_samplesize)
 
 # data operations on collected data
 def download_boxscores(date_start, date_end, is_simulation=False):
@@ -29,7 +28,7 @@ def download_boxscores(date_start, date_end, is_simulation=False):
         month_num =  int(str(month).split('-')[1])
         month_name = calendar.month_name[month_num].lower()
 
-        dict_links_games_month = get_links_games_month('2017', month_name)
+        dict_links_games_month = get_links_games_month(date_end.split('-')[0], month_name)
 
         for day, links in dict_links_games_month.items():
             # exit if after last requested day
@@ -51,8 +50,10 @@ def download_boxscores(date_start, date_end, is_simulation=False):
                 file_name = '%s.json' % link.split('/')[2]
 
                 # get boxscore info
-                boxscores_calc, outcomes_calc = get_boxscore(link, is_simulation=is_simulation)
-                # boxscores_predict, outcomes_predict = get_boxscores(links_games_predict, is_simulation=is_simulation)
+                if is_simulation:
+                    boxscores_calc, outcomes_calc, vegas_spread = get_boxscore(link, is_simulation=is_simulation)
+                else:
+                    boxscores_calc = get_boxscore(link, is_simulation=is_simulation)
 
                 # write results to cache
                 if not os.path.exists(file_path_boxscore):
@@ -63,7 +64,7 @@ def download_boxscores(date_start, date_end, is_simulation=False):
 
                 with open(file_path_boxscore + file_name, 'w') as file_out:
                     if is_simulation:
-                        json.dump({ 'boxscores' : boxes_html, 'outcome' : outcomes_calc }, file_out)
+                        json.dump({ 'boxscores' : boxes_html, 'outcome' : outcomes_calc, 'vegas_spread' : vegas_spread }, file_out)
                     else:
                         json.dump({ 'boxscores' : boxes_html }, file_out)
 
@@ -145,7 +146,7 @@ def run_predictions_day(date, days_samplesize, is_simulation=False):
         with open(file_path_dataplayers + file_name_dataplayers, 'r') as file_in:
             data_players = json.load(file_in)
     except Exception as e:
-        pass
+        return []
 
     if os.path.exists(file_path_boxscores):
         files = os.listdir(file_path_boxscores)
@@ -164,7 +165,6 @@ def get_player_data(boxscores):
         update_player_data(box, data_players)
         
     return data_players
-
 
 
 
@@ -225,7 +225,6 @@ def get_links_games_month(year_season, month):
 def get_links_games(year_season, date_end_str, days_samplesize, test_mode=False):
     games_all = []
     outcomes = []
-    # year_season = '2017'
     date_end = np.datetime64(date_end_str) + np.timedelta64(1, 'D') # to include the end date
     date_start = date_end - np.timedelta64(days_samplesize, 'D')
     
@@ -311,7 +310,11 @@ def get_boxscore(link_game, is_simulation=False):
         scores = scorebox.find_all('div', {'class' : 'score'})
         score_away, score_home = int(scores[0].getText()), int(scores[1].getText())
         date = link_game.split('/')[2][:8]
-        return ([box_away, box_home], (team_away, team_home, date, (score_away, score_home)))
+
+        # get vegas spread
+        vegas_spread = get_vegas_spread(team_away, team_home, date)
+
+        return ([box_away, box_home], (team_away, team_home, date, (score_away, score_home)), vegas_spread)
     else:
         return [box_away, box_home]
         
@@ -379,37 +382,67 @@ def predict_spreads_games(file_box, data_players, is_simulation=False):
     roster_home = get_roster(boxes[1])
     
     # calculate home and away team's expected value
-    value_away = calculate_value_team(roster_away, data_players)
-    value_home = calculate_value_team(roster_home, data_players)
+    features_predicted_away = predict_features_team(roster_away, data_players)
+    features_predicted_home = predict_features_team(roster_home, data_players)
 
-    return value_away - value_home
+
+    if is_simulation:    
+        return ([features_predicted_away, features_predicted_home], json_file["outcome"], json_file["vegas_spread"])
+    else:
+        return (features_predicted_away, features_predicted_home)
 
 
 # calculates value for a specific roster
-def calculate_value_team(roster, data_players):
-    score = 0.0
+def predict_features_team(roster, data_players):
+    # score = 0.0
+    features_predicted = []
+    players_seconds_played = []
+    players_games_played = []
+    # players_fg_scored = []
+    players_features_all = []
 
     # sums the statlines for each player given a sample size of days
-    for k,v in data_players.items():
-        if k in roster:
-            # grab the last n statlines
-            fg_adjusted = 0.0
+    # for k,v in data_players.items():
+    #     if k in roster:
 
-            statline_player = np.array(v['data'])
+    for player in roster:
+        if player not in data_players.keys():
+            continue
 
-            if statline_player.shape != (16,):
-                data_sum = np.sum(np.copy(statline_player), axis=0)
-                fg_adjusted = data_sum[2] / data_sum[1]
-            else:
-                fg_adjusted = statline_player[2] / statline_player[1]
+        statline_player = np.array(data_players[player]['data'])
+        # grab the last n statlines
+        # statline_player = np.array(v['data'])
 
-            score += fg_adjusted
+        if statline_player.shape != (16,):
+            data_player = np.sum(np.copy(statline_player), axis=0)
+        else:
+            data_player = statline_player
+        
+        players_seconds_played.append(data_player[0])
+        players_games_played.append(data_player[1])    
+        # players_fg_scored.append(data_player[15])
+        players_features_all.append(np.array(data_player[1:]))
 
-    if score == 0.0:
-        for k,v in data_players.items():
-            if k in roster:
-                print("zero score!")
-    return score
+
+    """
+    Expected FG per player = Expected seconds player will play * field goals per second
+    = (sec/g * multiplyer) * (fg/sec)
+    = (sec * fg * multiplyer) / (sec * g)
+    = (fg * multiplyer) / g
+
+    """
+    sum_seconds_per_game = 0.0
+    for i in range(len(players_seconds_played)):
+        sum_seconds_per_game += float(players_seconds_played[i] / players_games_played[i])
+
+    seconds_multiplyer = 14400 / sum_seconds_per_game   # adjusts active roster seconds per game to account for 14,400 active minutes on floor
+    features_predicted = [seconds_multiplyer * player_features for player_features in players_features_all]
+
+    # for player_features in players_features_all:
+        # fg_adj = float(players_fg_scored[i] * seconds_multiplyer) / float(players_games_played[i])
+        # score += fg_adj
+
+    return features_predicted
 
 
 # returns tuple of (roster_away, roster_home) from boxscore
@@ -430,7 +463,7 @@ def get_roster(box):
             roster.append(player_id)
             
     return roster
-                        
+
 
 def convert_time_to_seconds(str_time):
     time_split = str_time.split(':')
@@ -443,5 +476,11 @@ def get_vegas_spread(team_away, team_home, date):
     page = requests.get("https://www.cbssports.com/nba/gametracker/boxscore/NBA_%s_%s@%s/" % (date, mappings.team_name_cbs[team_away], mappings.team_name_cbs[team_home]))
     soup = BeautifulSoup(page.content, "html.parser")
 
-    spread = float(soup.find('div', {'class' : 'game-meta-odds'}).getText().split()[2])
-    return spread
+    try:
+        spread = float(soup.find('div', {'class' : 'game-meta-odds'}).getText().split()[2])
+        print("%s: %s, %s = %s" % (date, team_away, team_home, spread))
+        return spread
+    except Exception as e:
+        print(e)
+        print("DIDN'T WORK FOR: %s: %s, %s" % (date, team_away, team_home))
+        return float("inf")
