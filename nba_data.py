@@ -120,7 +120,7 @@ def generate_player_data(date_start, date_end, days_samplesize):
 
 
 
-def run_predictions_simulation(date_start, date_end, days_samplesize):
+def run_predictions_simulation(date_start, date_end, days_samplesize, unadjusted=False):
     predictions = []
 
 	# generate array of files we will read
@@ -128,12 +128,12 @@ def run_predictions_simulation(date_start, date_end, days_samplesize):
     dates_all = np.arange(date_start, date_end_plusone, dtype='datetime64[D]')
 
     for date in dates_all:
-        predictions.extend(run_predictions_day(str(date), days_samplesize, is_simulation=True))
+        predictions.extend(run_predictions_day(str(date), days_samplesize, is_simulation=True, unadjusted=unadjusted))
 
     return predictions
 
 
-def run_predictions_day(date, days_samplesize, is_simulation=False):
+def run_predictions_day(date, days_samplesize, is_simulation=False, unadjusted=False):
     predictions = []
     data_players = {}
     date_split = date.split('-')
@@ -152,7 +152,7 @@ def run_predictions_day(date, days_samplesize, is_simulation=False):
         files = os.listdir(file_path_boxscores)
     
         for file_name in files:
-            predictions.append(predict_spreads_games(file_path_boxscores + file_name, data_players, is_simulation))
+            predictions.append(predict_spreads_games(file_path_boxscores + file_name, data_players, is_simulation, unadjusted))
 
     return predictions
 
@@ -368,7 +368,7 @@ def update_player_data(boxscores, dataset):
 
 
 # function that calcuates spread for a game
-def predict_spreads_games(file_box, data_players, is_simulation=False):
+def predict_spreads_games(file_box, data_players, is_simulation=False, unadjusted=False):
     predictions = []
     box = []
 
@@ -382,8 +382,8 @@ def predict_spreads_games(file_box, data_players, is_simulation=False):
     roster_home = get_roster(boxes[1])
     
     # calculate home and away team's expected value
-    features_predicted_away = predict_features_team(roster_away, data_players)
-    features_predicted_home = predict_features_team(roster_home, data_players)
+    features_predicted_away = predict_features_team(roster_away, data_players, unadjusted)
+    features_predicted_home = predict_features_team(roster_home, data_players, unadjusted)
 
 
     if is_simulation:    
@@ -393,7 +393,7 @@ def predict_spreads_games(file_box, data_players, is_simulation=False):
 
 
 # calculates value for a specific roster
-def predict_features_team(roster, data_players):
+def predict_features_team(roster, data_players, unadjusted):
     # score = 0.0
     features_predicted = []
     players_seconds_played = []
@@ -421,8 +421,7 @@ def predict_features_team(roster, data_players):
         players_seconds_played.append(data_player[0])
         players_games_played.append(data_player[1])    
         # players_fg_scored.append(data_player[15])
-        players_features_all.append(np.array(data_player[1:]))
-
+        players_features_all.append(np.array(data_player[2:]))
 
     """
     Expected FG per player = Expected seconds player will play * field goals per second
@@ -435,14 +434,15 @@ def predict_features_team(roster, data_players):
     for i in range(len(players_seconds_played)):
         sum_seconds_per_game += float(players_seconds_played[i] / players_games_played[i])
 
-    seconds_multiplyer = 14400 / sum_seconds_per_game   # adjusts active roster seconds per game to account for 14,400 active minutes on floor
-    features_predicted = [seconds_multiplyer * player_features for player_features in players_features_all]
+    seconds_multiplyer = 14400 / sum_seconds_per_game if not unadjusted else 1  # adjusts active roster seconds per game to account for 14,400 active minutes on floor
+    for i in range(len(players_features_all)):
+        player_games_played = players_games_played[i]
+        player_features_predicted = players_features_all[i]
+        features_predicted.append((seconds_multiplyer / player_games_played) * player_features_predicted)
 
-    # for player_features in players_features_all:
-        # fg_adj = float(players_fg_scored[i] * seconds_multiplyer) / float(players_games_played[i])
-        # score += fg_adj
 
-    return features_predicted
+    features_predicted_sum = np.sum(features_predicted, axis=0)
+    return features_predicted_sum
 
 
 # returns tuple of (roster_away, roster_home) from boxscore
