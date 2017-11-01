@@ -339,13 +339,13 @@ def update_player_data(boxscores, dataset):
                 if player_secondsplayed > 0:
                     player_gp = 1   # counter for games played
                     player_fg = int(player.find('td', { 'data-stat' : 'fg' }).getText())
-                    player_fga = int(player.find('td', { 'data-stat' : 'fga' }).getText())
+                    player_fgm = int(player.find('td', { 'data-stat' : 'fga' }).getText()) - player_fg
                     # player_fg_pct = player.find('td', { 'data-stat' : 'fg_pct' }).getText()
                     player_fg3 = int(player.find('td', { 'data-stat' : 'fg3' }).getText())
-                    player_fg3a = int(player.find('td', { 'data-stat' : 'fg3a' }).getText())
+                    player_fg3m = int(player.find('td', { 'data-stat' : 'fg3a' }).getText()) - player_fg3
                     # player_fg3_pct = player.find('td', { 'data-stat' : 'fg3_pct' }).getText()
                     player_ft = int(player.find('td', { 'data-stat' : 'ft' }).getText())
-                    player_fta = int(player.find('td', { 'data-stat' : 'fta' }).getText())
+                    player_ftm = int(player.find('td', { 'data-stat' : 'fta' }).getText()) - player_ft
                     # player_ft_pct = player.find('td', { 'data-stat' : 'ft_pct' }).getText()
                     player_orb = int(player.find('td', { 'data-stat' : 'orb' }).getText())
                     player_drb = int(player.find('td', { 'data-stat' : 'drb' }).getText())
@@ -358,7 +358,7 @@ def update_player_data(boxscores, dataset):
                     player_pts = int(player.find('td', { 'data-stat' : 'pts' }).getText())
 
                     # player_data_arr = np.array([player_secondsplayed, player_gp, player_fg, player_fga, player_fg3, player_fg3a, player_ft, player_fta, player_orb, player_drb, player_ast, player_stl, player_blk, player_tov, player_pf, player_pts])
-                    player_data_arr = [player_secondsplayed, player_gp, player_fg, player_fga, player_fg3, player_fg3a, player_ft, player_fta, player_orb, player_drb, player_ast, player_stl, player_blk, player_tov, player_pf, player_pts]
+                    player_data_arr = [player_secondsplayed, player_gp, player_fg, player_fgm, player_fg3, player_fg3m, player_ft, player_ftm, player_orb, player_drb, player_ast, player_stl, player_blk, player_tov, player_pf, player_pts]
 
                     if player_id in dataset:
                         # dataset[player_id]['data'] = np.vstack((dataset[player_id]['data'], player_data_arr))
