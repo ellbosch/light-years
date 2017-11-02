@@ -28,14 +28,14 @@ def get_dataframe(dataset):
 	    predictions_all.append(game[0][1])
 
 	df = pd.DataFrame(predictions_all, columns=cols)
-	df['is_home'] = pd.Series([1 if i % 2 != 0 else 0 for i in range(len(predictions_all))])
+	# df['is_home'] = pd.Series([1 if i % 2 != 0 else 0 for i in range(len(predictions_all))])
 	df['outcome'] = pd.Series(outcomes_all, index=df.index)
 	return df
 
 
 def train_model(train, target):
-	df_train = ml.get_dataframe(train)
-	df_predict = ml.get_dataframe(target)
+	df_train = get_dataframe(train)
+	df_predict = get_dataframe(target)
 	outcomes_train = df_train['outcome']
 	outcomes_predict = df_predict['outcome']
 
